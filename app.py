@@ -3,6 +3,7 @@ from openai import OpenAI
 import chromadb
 from docx import Document
 import requests
+import fitz
 
 # ChromaDBの設定
 DB_DIR = "./chroma_db"
@@ -26,10 +27,19 @@ def ollama_embed(text):
 def load_word_document(file):
     return "\n".join(para.text for para in Document(file).paragraphs)
 
+# PDFファイルを読み込む関数
+def load_pdf_pymupdf(file):
+    doc = fitz.open(stream=file.read(), filetype="pdf")
+    text = ""
+    for page in doc:
+        text += page.get_text() + "\n"
+    doc.close()
+    return text
+
 # テキスト分割関数
 def split_text(text):
-    chunk_size = 200
-    overlap = 50
+    chunk_size = 600
+    overlap = 100
     chunks = []
     start = 0
     while start < len(text):
@@ -50,23 +60,19 @@ system_prompt = st.sidebar.text_area(
     "あなたは有能なアシスタントです。日本語で回答してください。",
 )
 
-# ワードファイルのアップロード
+# Word、PDFファイルのアップロード
 uploaded_files = st.sidebar.file_uploader(
-    "Wordファイルをアップロード(.docx)",
-    type=["docx"],
-    accept_multiple_files=True
-)
-
-# PDFファイルのアップロード
-uploaded_pdf_files = st.sidebar.file_uploader(
-    "PDFファイルをアップロード(.pdf)",
-    type=["pdf"],
+    "Word、PDFファイルをアップロード(.docx, .pdf)",
+    type=["docx", "pdf"],
     accept_multiple_files=True
 )
 
 if st.sidebar.button("インデックス作成"):
     for file in uploaded_files:
-        text = load_word_document(file)
+        if file.name.endswith(".docx"):
+            text = load_word_document(file)
+        elif file.name.endswith(".pdf"):
+            text = load_pdf_pymupdf(file)
         chunks = split_text(text)
         for i,chunk in enumerate(chunks):
             embed = ollama_embed(chunk)
@@ -109,7 +115,7 @@ if prompt:
     query_embed = ollama_embed(prompt)
     results = st.session_state.collection.query(
         query_embeddings=[query_embed],
-        n_results=2
+        n_results=5
     )
 
     if results["documents"]:
@@ -124,12 +130,23 @@ if prompt:
     else:
         final_user_prompt = prompt
     
-    st.session_state.messages.append({"role": "user", "content": final_user_prompt})
+    st.session_state.messages.append({"role": "user", "content": prompt})
 
+    prompt_message = []
+
+    # if system_prompt.strip():
+    #     messages = [{"role": "system", "content": system_prompt}] + st.session_state.messages
+    # else:
+    #     messages = st.session_state.messages
     if system_prompt.strip():
-        messages = [{"role": "system", "content": system_prompt}] + st.session_state.messages
-    else:
-        messages = st.session_state.messages
+        prompt_message.append({"role": "system", "content": system_prompt})
+
+    # 過去の履歴を追加（ただし、今追加したばかりの最新の prompt 以外）
+    # これにより過去の文脈をLLMに伝える
+    prompt_message.extend(st.session_state.messages[:-1])
+
+    # 最新の質問だけを「ドキュメント情報付き」のプロンプトに差し替えて追加
+    prompt_message.append({"role": "user", "content": final_user_prompt})
 
     # LLMの返答を表示
     with st.chat_message("assistant"):
@@ -137,7 +154,7 @@ if prompt:
         stream_response = ""
         stream = client.chat.completions.create(
             model=model,
-            messages=messages,
+            messages=prompt_message,
             temperature=temperature,
             stream=True
         )
