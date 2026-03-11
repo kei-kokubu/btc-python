@@ -5,6 +5,7 @@ from docx import Document
 import requests
 import fitz
 from bs4 import BeautifulSoup
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # ChromaDBの設定
 DB_DIR = "./chroma_db"
@@ -50,15 +51,25 @@ def load_web_text(url):
 
 # テキスト分割関数
 def split_text(text):
-    chunk_size = 250
-    overlap = 60
-    chunks = []
-    start = 0
-    while start < len(text):
-        end = start + chunk_size
-        chunks.append(text[start:end])
-        start += chunk_size - overlap
-    return chunks
+    # chunk_size = 250
+    # overlap = 60
+    # chunks = []
+    # start = 0
+    # while start < len(text):
+    #     end = start + chunk_size
+    #     chunks.append(text[start:end])
+    #     start += chunk_size - overlap
+    # return chunks
+    separators = ["\n\n", "\n", "。", "！", "？", " ", ""]
+    
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=400,
+        chunk_overlap=80,
+        length_function=len,
+        separators=separators
+    )
+    
+    return text_splitter.split_text(text)
 
 # サイドバーの設定
 st.set_page_config(page_title="Local LLM Chat")
@@ -175,8 +186,6 @@ if prompt:
 
     # 最新の質問だけを「ドキュメント情報付き」のプロンプトに差し替えて追加
     prompt_message.append({"role": "user", "content": final_user_prompt})
-    print("-----------")
-    print(prompt_message)
 
     # LLMの返答を表示
     with st.chat_message("assistant"):
