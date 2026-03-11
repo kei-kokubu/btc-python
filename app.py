@@ -4,6 +4,7 @@ import chromadb
 from docx import Document
 import requests
 import fitz
+from bs4 import BeautifulSoup
 
 # ChromaDBの設定
 DB_DIR = "./chroma_db"
@@ -36,10 +37,21 @@ def load_pdf_pymupdf(file):
     doc.close()
     return text
 
+# WEBスクレイピング
+def load_web_text(url):
+    response = requests.get(url)
+    response.encoding = response.apparent_encoding
+    html_content = response.text
+    soup = BeautifulSoup(html_content, 'html.parser')
+    # pタグを検索してテキストを取得
+    p_elements = soup.find_all('p')
+    return "\n".join([p.get_text() for p in p_elements])
+    
+
 # テキスト分割関数
 def split_text(text):
-    chunk_size = 600
-    overlap = 100
+    chunk_size = 250
+    overlap = 60
     chunks = []
     start = 0
     while start < len(text):
@@ -83,6 +95,22 @@ if st.sidebar.button("インデックス作成"):
             )
     st.sidebar.success("インデックス作成完了")
 
+target_url = st.sidebar.text_input("URLを入力 (http://...)")
+
+if st.sidebar.button("URLからインデックス作成"):
+    if target_url:
+        web_text = load_web_text(target_url)
+        print(web_text)
+        chunks = split_text(web_text)
+        for i,chunk in enumerate(chunks):
+            embed = ollama_embed(chunk)
+            st.session_state.collection.add(
+                documents=[chunk],
+                embeddings=[embed],
+                ids=[f"{target_url}_{i}"]
+            )
+    st.sidebar.success("インデックス作成完了")
+
 # タイトル
 st.title("Local LLM Chat")
 
@@ -115,7 +143,7 @@ if prompt:
     query_embed = ollama_embed(prompt)
     results = st.session_state.collection.query(
         query_embeddings=[query_embed],
-        n_results=5
+        n_results=3
     )
 
     if results["documents"]:
@@ -147,6 +175,8 @@ if prompt:
 
     # 最新の質問だけを「ドキュメント情報付き」のプロンプトに差し替えて追加
     prompt_message.append({"role": "user", "content": final_user_prompt})
+    print("-----------")
+    print(prompt_message)
 
     # LLMの返答を表示
     with st.chat_message("assistant"):
