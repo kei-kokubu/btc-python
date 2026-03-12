@@ -45,7 +45,13 @@ def load_web_text(url):
     html_content = response.text
     soup = BeautifulSoup(html_content, 'html.parser')
     # pタグを検索してテキストを取得
-    p_elements = soup.find_all('p')
+    # p_elements = soup.find_all('p')
+    main_content = soup.find('div', id='masterContents')
+    if main_content:
+        p_elements = main_content.find_all('p')
+    # print("*************")
+    # print(p_elements)
+    # print([p.get_text() for p in p_elements])
     return "\n".join([p.get_text() for p in p_elements])
     
 
@@ -102,7 +108,8 @@ if st.sidebar.button("インデックス作成"):
             st.session_state.collection.add(
                 documents=[chunk],
                 embeddings=[embed],
-                ids=[f"{file.name}_{i}"]
+                ids=[f"{file.name}_{i}"],
+                metadatas=[{"source": file.name}]
             )
     st.sidebar.success("インデックス作成完了")
 
@@ -111,14 +118,15 @@ target_url = st.sidebar.text_input("URLを入力 (http://...)")
 if st.sidebar.button("URLからインデックス作成"):
     if target_url:
         web_text = load_web_text(target_url)
-        print(web_text)
+        # print(web_text)
         chunks = split_text(web_text)
         for i,chunk in enumerate(chunks):
             embed = ollama_embed(chunk)
             st.session_state.collection.add(
                 documents=[chunk],
                 embeddings=[embed],
-                ids=[f"{target_url}_{i}"]
+                ids=[f"{target_url}_{i}"],
+                metadatas=[{"source": target_url}]
             )
     st.sidebar.success("インデックス作成完了")
 
@@ -157,8 +165,33 @@ if prompt:
         n_results=3
     )
 
+    # print("--------------------------")
+    # print(results)
+    # print("=========================")
+    # print(results["distances"])
+
     if results["documents"]:
         context_text = "\n".join(results["documents"][0])
+        # sources = set()
+        # for meta in results["metadatas"][0]:
+        #     if not sources:
+        #         sources.add(meta["source"])
+        # source_text = "\n".join(src for src in sources)
+
+        context_texts = []
+        sources = set()
+        # distanceのしきい値
+        threshold = 300
+
+        for doc, meta, dist in zip(results["documents"][0], results["metadatas"][0], results["distances"][0]):
+            if dist < threshold:
+                context_texts.append(doc)
+                if "source" in meta:
+                    sources.add(meta["source"])
+        
+        context_text = "\n".join(context_texts)
+        source_text = "\n".join(sources)
+
         rag_prompt = f"""
         以下は関連ドキュメントの抜粋です。
         {context_text}
@@ -168,6 +201,7 @@ if prompt:
         final_user_prompt = rag_prompt
     else:
         final_user_prompt = prompt
+        source_text = ""
     
     st.session_state.messages.append({"role": "user", "content": prompt})
 
@@ -199,7 +233,9 @@ if prompt:
         )
         for chunk in stream:
             stream_response += chunk.choices[0].delta.content
-            placeholder.write(stream_response)  
+            placeholder.write(stream_response)
+        if source_text:
+            st.info(f"引用：{source_text}")
     
     # 会話の履歴を保存
     st.session_state.messages.append({"role": "assistant", "content": stream_response})
