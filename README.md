@@ -1,6 +1,6 @@
 # Local LLM Chatbot
 
-このアプリはLocal LLMで動くチャットボットアプリです。Wordファイル（.docx）やPDFファイル、Webサイトをドキュメントとして読み込むことができます。
+このアプリはLocal LLMで動くチャットボットアプリです。Wordファイル（.docx）やPDFファイル、Webサイト（ITmedia NEWS記事で動作確認）をドキュメントとして読み込むことができます。
 
 ## 使用技術一覧
 
